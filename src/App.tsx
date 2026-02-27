@@ -351,7 +351,10 @@ function App() {
         const data = await response.json();
         const remoteUrl = data.clone_url;
         
-        await runCommand(selectedProject.path, 'git', ['remote', 'add', 'origin', remoteUrl]);
+        // Add token to URL for push authentication
+        const authUrl = remoteUrl.replace('https://', `https://${settings.github_token}@`);
+        
+        await runCommand(selectedProject.path, 'git', ['remote', 'add', 'origin', authUrl]);
         await runCommand(selectedProject.path, 'git', ['branch', '-M', 'main']);
         
         // Check if there are any files to commit
@@ -359,7 +362,13 @@ function App() {
         if (statusCheck.stdout.trim()) {
           await runCommand(selectedProject.path, 'git', ['add', '.']);
           await runCommand(selectedProject.path, 'git', ['commit', '-m', 'Initial commit']);
-          await runCommand(selectedProject.path, 'git', ['push', '-u', 'origin', 'main']);
+        }
+        
+        // Always push (even if no commits, this sets up the remote)
+        addOutput('Pushing to remote...', 'info');
+        const pushResult = await runCommand(selectedProject.path, 'git', ['push', '-u', 'origin', 'main']);
+        if (pushResult.exit_code !== 0) {
+          addOutput(`Push note: ${pushResult.stderr || 'completed'}`, 'info');
         }
         
         addOutput(`Created and linked repo: ${remoteUrl}`, 'success');
@@ -375,7 +384,19 @@ function App() {
         
         const remoteUrl = `https://github.com/${repoName}.git`;
         
-        await runCommand(selectedProject.path, 'git', ['remote', 'add', 'origin', remoteUrl]);
+        // Add token to URL for push authentication
+        const authUrl = remoteUrl.replace('https://', `https://${settings.github_token}@`);
+        
+        await runCommand(selectedProject.path, 'git', ['remote', 'add', 'origin', authUrl]);
+        
+        // Check if there are any files to commit and push
+        const statusCheck = await runCommand(selectedProject.path, 'git', ['status', '--porcelain']);
+        if (statusCheck.stdout.trim()) {
+          await runCommand(selectedProject.path, 'git', ['add', '.']);
+          await runCommand(selectedProject.path, 'git', ['commit', '-m', 'Initial commit']);
+          await runCommand(selectedProject.path, 'git', ['push', '-u', 'origin', 'main']);
+        }
+        
         addOutput(`Linked to repo: ${remoteUrl}`, 'success');
       }
       
