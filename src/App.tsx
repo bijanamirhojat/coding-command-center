@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Project, GitStatus, AppSettings } from './types';
 import {
   scanLibrary,
@@ -57,6 +57,7 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [terminalExpanded, setTerminalExpanded] = useState(true);
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const outputRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loaded = loadSettings();
@@ -79,6 +80,12 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [output]);
 
   const addOutput = useCallback((content: string, type: OutputLine['type'] = 'info') => {
     setOutput((prev) => [
@@ -617,7 +624,7 @@ function App() {
           </div>
         </div>
         {terminalExpanded && (
-          <div className="output-content">
+          <div className="output-content" ref={outputRef}>
             {output.map((line) => (
               <div key={line.id} className={`output-line ${line.type}`}>
                 <span className="timestamp">{line.timestamp.toLocaleTimeString()}</span>
@@ -1001,10 +1008,12 @@ function ProjectDetail({
                           href={process.url} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="url-link"
+                          className="url-button"
                           onClick={(e) => e.stopPropagation()}
+                          title={process.url}
                         >
-                          🌐 Open
+                          <span className="url-icon">🔗</span>
+                          <span className="url-text">{process.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span>
                         </a>
                       )}
                     </>

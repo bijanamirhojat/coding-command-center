@@ -276,7 +276,7 @@ app.post('/api/spawn-command', (req, res) => {
   let url = null;
   
   const checkForUrl = (data) => {
-    const text = data.toString();
+    const text = data.toString().replace(/\x1b\[[0-9;]*m/g, '');
     output += text;
     if (!url) {
       const urlMatch = text.match(/(https?:\/\/[^\s]+|localhost:[0-9]+|127\.0\.0\.1:[0-9]+)/);
