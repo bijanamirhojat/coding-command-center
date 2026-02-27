@@ -83,6 +83,13 @@ export async function killProcess(pid: number): Promise<void> {
   if (!response.ok) throw new Error(await response.text());
 }
 
+export async function getProcessUrl(pid: number): Promise<string | null> {
+  const response = await fetch(`${API_BASE}/process-url/${pid}`);
+  if (!response.ok) return null;
+  const data = await response.json();
+  return data.url;
+}
+
 export async function openInVscode(projectPath: string): Promise<void> {
   const response = await fetch(`${API_BASE}/open-vscode`, {
     method: 'POST',

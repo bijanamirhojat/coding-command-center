@@ -11,6 +11,7 @@ import {
   runCommand,
   spawnCommand,
   killProcess,
+  getProcessUrl,
 } from './api';
 
 interface OutputLine {
@@ -40,7 +41,7 @@ function App() {
   const [gitStatusMap, setGitStatusMap] = useState<Record<string, GitStatus>>({});
   const [output, setOutput] = useState<OutputLine[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [runningProcesses, setRunningProcesses] = useState<Record<string, { pid: number; script: string }>>({});
+  const [runningProcesses, setRunningProcesses] = useState<Record<string, { pid: number; script: string; url?: string }>>({});
   const [showNewProject, setShowNewProject] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [vscodeInstalled] = useState(true);
@@ -50,6 +51,7 @@ function App() {
   const [repoName, setRepoName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
+  const [userRepos, setUserRepos] = useState<{ name: string; full_name: string }[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
@@ -84,6 +86,22 @@ function App() {
       { id: Date.now() + Math.random(), timestamp: new Date(), content, type },
     ]);
   }, []);
+
+  const renderContentWithLinks = (content: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+|localhost:[0-9]+|127\.0\.0\.1:[0-9]+)/;
+    const parts = content.split(urlRegex);
+    return parts.map((part, i) => {
+      if (urlRegex.test(part)) {
+        const url = part.startsWith('http') ? part : `http://${part}`;
+        return (
+          <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="output-link">
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
 
   const scanAllLibraries = useCallback(async () => {
     addOutput('Scanning libraries...', 'info');
@@ -171,11 +189,31 @@ function App() {
 
     try {
       const { pid } = await spawnCommand(selectedProject.path, 'npm', ['run', scriptName]);
+      const key = `${selectedProject.path}:${scriptName}`;
       setRunningProcesses(prev => ({
         ...prev,
-        [`${selectedProject.path}:${scriptName}`]: { pid, script: scriptName }
+        [key]: { pid, script: scriptName }
       }));
       addOutput(`Started script "${scriptName}" with PID ${pid}`, 'success');
+      
+      const checkUrl = async (attempt: number) => {
+        if (attempt > 5) return;
+        try {
+          const url = await getProcessUrl(pid);
+          if (url) {
+            setRunningProcesses(prev => ({
+              ...prev,
+              [key]: { ...prev[key], url }
+            }));
+            addOutput(`🌐 ${url}`, 'success');
+          } else {
+            setTimeout(() => checkUrl(attempt + 1), 1500);
+          }
+        } catch (e) {
+          setTimeout(() => checkUrl(attempt + 1), 1500);
+        }
+      };
+      setTimeout(() => checkUrl(1), 2000);
     } catch (e) {
       addOutput(`Error: ${e}`, 'error');
     }
@@ -309,6 +347,23 @@ function App() {
     }
     setIsPrivate(false);
     setLinkRepoModal({ show: true, type });
+    
+    if (type === 'existing') {
+      try {
+        const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+          headers: {
+            'Authorization': `Bearer ${settings.github_token}`,
+            'Accept': 'application/vnd.github.v3+json',
+          }
+        });
+        if (response.ok) {
+          const repos = await response.json();
+          setUserRepos(repos.map((r: any) => ({ name: r.name, full_name: r.full_name })));
+        }
+      } catch (e) {
+        addOutput('Failed to fetch repos', 'error');
+      }
+    }
   };
 
   const executeLinkRepo = async () => {
@@ -566,7 +621,7 @@ function App() {
             {output.map((line) => (
               <div key={line.id} className={`output-line ${line.type}`}>
                 <span className="timestamp">{line.timestamp.toLocaleTimeString()}</span>
-                <pre>{line.content}</pre>
+                <pre>{renderContentWithLinks(line.content)}</pre>
               </div>
             ))}
           </div>
@@ -621,17 +676,33 @@ function App() {
             
             <div className="form-group">
               <label>Repository</label>
-              <input
-                type="text"
-                className="input"
-                placeholder={linkRepoModal.type === 'new' ? 'my-new-repo' : 'username/repo-name'}
-                value={repoName}
-                onChange={(e) => setRepoName(e.target.value)}
-                disabled={isLinking}
-                autoFocus
-              />
+              {linkRepoModal.type === 'existing' ? (
+                <select
+                  className="input"
+                  value={repoName}
+                  onChange={(e) => setRepoName(e.target.value)}
+                  disabled={isLinking}
+                >
+                  <option value="">Select a repository...</option>
+                  {userRepos.map((repo) => (
+                    <option key={repo.full_name} value={repo.full_name}>
+                      {repo.full_name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="my-new-repo"
+                  value={repoName}
+                  onChange={(e) => setRepoName(e.target.value)}
+                  disabled={isLinking}
+                  autoFocus
+                />
+              )}
               <p className="help-text">
-                {linkRepoModal.type === 'new' ? 'A new GitHub repository will be created' : 'Enter in format: username/repository'}
+                {linkRepoModal.type === 'new' ? 'A new GitHub repository will be created' : 'Select a repository from your GitHub account'}
               </p>
             </div>
 
@@ -793,7 +864,7 @@ function ProjectDetail({
   isRunning: boolean;
   vscodeInstalled: boolean;
   onLinkRepo: (type: 'new' | 'existing') => void;
-  runningProcesses: Record<string, { pid: number; script: string }>;
+  runningProcesses: Record<string, { pid: number; script: string; url?: string }>;
   onKillProcess: (scriptName: string) => void;
 }) {
   const config = projectTypeConfig[project.project_type] || projectTypeConfig.generic;
@@ -913,6 +984,7 @@ function ProjectDetail({
             {project.scripts.map((script) => {
               const key = `${project.path}:${script.name}`;
               const isRunning = !!runningProcesses[key];
+              const process = runningProcesses[key];
               return (
                 <div key={script.name} className="script-item">
                   <button
@@ -921,7 +993,22 @@ function ProjectDetail({
                   >
                     {isRunning ? '■ Stop' : script.name}
                   </button>
-                  {isRunning && <span className="running-badge">PID {runningProcesses[key].pid}</span>}
+                  {isRunning && (
+                    <>
+                      <span className="running-badge">PID {process?.pid}</span>
+                      {process?.url && (
+                        <a 
+                          href={process.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="url-link"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          🌐 Open
+                        </a>
+                      )}
+                    </>
+                  )}
                 </div>
               );
             })}

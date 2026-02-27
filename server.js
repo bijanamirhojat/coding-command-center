@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { exec, spawn } from 'child_process';
+import { exec, spawn, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -168,8 +168,6 @@ app.get('/api/git-status', (req, res) => {
   let behind = 0;
   
   try {
-    const { execSync } = require('child_process');
-    
     // Get status
     try {
       const statusOutput = execSync('git status --porcelain', { 
@@ -195,7 +193,9 @@ app.get('/api/git-status', (req, res) => {
           modified.push(filePath);
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Git status error:', e);
+    }
     
     // Get ahead/behind if remote exists
     if (remoteUrl) {
@@ -261,15 +261,50 @@ app.post('/api/run-command', (req, res) => {
   });
 });
 
+const runningProcesses = {};
+
 app.post('/api/spawn-command', (req, res) => {
   const { command, args, cwd } = req.body;
   
   const child = spawn(command, args, {
     cwd,
-    shell: true
+    shell: true,
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  
+  let output = '';
+  let url = null;
+  
+  const checkForUrl = (data) => {
+    const text = data.toString();
+    output += text;
+    if (!url) {
+      const urlMatch = text.match(/(https?:\/\/[^\s]+|localhost:[0-9]+|127\.0\.0\.1:[0-9]+)/);
+      if (urlMatch) {
+        url = urlMatch[1].startsWith('http') ? urlMatch[1] : 'http://' + urlMatch[1];
+        runningProcesses[child.pid] = { url, command: command + ' ' + args.join(' ') };
+      }
+    }
+  };
+  
+  child.stdout.on('data', checkForUrl);
+  child.stderr.on('data', checkForUrl);
+  
+  child.on('close', () => {
+    delete runningProcesses[child.pid];
   });
   
   res.json({ pid: child.pid });
+});
+
+app.get('/api/process-url/:pid', (req, res) => {
+  const { pid } = req.params;
+  const info = runningProcesses[pid];
+  if (info && info.url) {
+    res.json({ url: info.url });
+  } else {
+    res.json({ url: null });
+  }
 });
 
 app.post('/api/kill-process', (req, res) => {
