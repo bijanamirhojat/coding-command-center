@@ -48,6 +48,7 @@ function App() {
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [linkRepoModal, setLinkRepoModal] = useState<{ show: boolean; type: 'new' | 'existing' }>({ show: false, type: 'new' });
   const [repoName, setRepoName] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -306,6 +307,7 @@ function App() {
       addOutput('GitHub token not configured', 'error');
       return;
     }
+    setIsPrivate(false);
     setLinkRepoModal({ show: true, type });
   };
 
@@ -335,7 +337,7 @@ function App() {
           body: JSON.stringify({
             name: repoName,
             description: selectedProject.description || selectedProject.name,
-            private: false,
+            private: isPrivate,
             auto_init: true
           })
         });
@@ -632,6 +634,20 @@ function App() {
                 {linkRepoModal.type === 'new' ? 'A new GitHub repository will be created' : 'Enter in format: username/repository'}
               </p>
             </div>
+
+            {linkRepoModal.type === 'new' && (
+              <div className="form-group">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={isPrivate}
+                    onChange={(e) => setIsPrivate(e.target.checked)}
+                    disabled={isLinking}
+                  />
+                  Private repository
+                </label>
+              </div>
+            )}
 
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setLinkRepoModal({ show: false, type: 'new' })} disabled={isLinking}>
